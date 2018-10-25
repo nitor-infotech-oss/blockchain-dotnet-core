@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Tasks;
+using blockchain.net.Sockets;
+using blockchain.net.Sockets.EventArgs;
 using Newtonsoft.Json;
-using Waher.Networking.PeerToPeer;
 
 /// Components evaluated
 // https://github.com/BlueSquid1/P2PNET/wiki/Getting-Started
@@ -13,15 +15,15 @@ namespace blockchain.net
     public class PeerToPeer
     {
         private readonly Blockchain blockchain = new Blockchain();
-        private PeerToPeerNetwork server = null;
-        private List<PeerConnection> peers = new List<PeerConnection>();
+        private TcpListener server = null;
+        private List<ClientSocket> peers = new List<ClientSocket>();
 
         public PeerToPeer(Blockchain blockchain)
         {
             this.blockchain = blockchain;
         }
 
-        public List<PeerConnection> Peers
+        public List<ClientSocket> Peers
         {
             get
             {
@@ -33,38 +35,36 @@ namespace blockchain.net
         {
             var host = "127.0.0.1";
             var peerAddress = $"tcp://{host}:{port}";
-            server = new PeerToPeerNetwork($"block-chain-{port}", port, port, new Sniffer());
-
-            server.OnPeerConnected += (e, p) =>
+            server = new TcpListener(IPAddress.Parse(host), port);
+            server.Start();
+            await Task.Factory.StartNew(async () =>
             {
-                peers.Add(p);
-            };
-
-            server.OnStateChange += (object Sender, PeerToPeerNetworkState NewState) =>
-            {
-                if (NewState == PeerToPeerNetworkState.Ready)
+                while (true)
                 {
+                    var connectedClient = await server.AcceptTcpClientAsync();
+                    var peer = new ClientSocket(connectedClient);
+                    await InitMessageHandler(peer);
                 }
-            };
-
-            server.Wait();
-
-            IPAddress ipAddress = null;
-            IPAddress.TryParse(host, out ipAddress);
-            var peerConnection = await server.ConnectToPeer(new IPEndPoint(ipAddress, port));
-            InitMessageHandler(peerConnection);
-
-            await Write(peerConnection, Messages.GetLatestBlock());
+            });
+            // TcpClient client = new TcpClient();
+            // await client.ConnectAsync(host, port);
         }
 
-        public void InitMessageHandler(PeerConnection peer)
+        public async Task InitMessageHandler(ClientSocket peer)
         {
-            peer.OnReceived += async (object Sender, byte[] Packet) =>
+            this.peers.Add(peer);
+            peer.Connected += (c) =>
             {
-                string receivedMsg = Helpers.StringFromBytes(Packet);
+                Console.WriteLine($"Connected: {peer} -> {c.BaseSocket.Endpoint}");
+            };
+
+            peer.DataReceived += async (DataReceivedArgs args) =>
+            {
+                string receivedMsg = Helpers.StringFromBytes(args.Data);
                 Message message = JsonConvert.DeserializeObject<Message>(receivedMsg);
                 await HandleMessage(peer, message);
             };
+            await this.Write(peer, Messages.GetLatestBlock());
         }
 
         public async Task ConnectToPeer(string host, int port)
@@ -72,12 +72,14 @@ namespace blockchain.net
             var peerAddress = $"tcp://{host}:{port}";
             IPAddress ipAddress = null;
             IPAddress.TryParse(host, out ipAddress);
-            var peerConnection = await server.ConnectToPeer(new IPEndPoint(ipAddress, port));
+            TcpClient client = new TcpClient();
+            await client.ConnectAsync(host, port);
+            var peer = new ClientSocket(client);
+            await InitMessageHandler(peer);
         }
 
         public void DiscoverPeers()
         {
-
         }
 
         public void BroadcastLatest()
@@ -90,16 +92,16 @@ namespace blockchain.net
             this.peers.ForEach(peer => this.Write(peer, message).Wait());
         }
 
-        public async Task Write(PeerConnection peer, Message message)
+        public async Task Write(ClientSocket peer, Message message)
         {
             await Task.Factory.StartNew(() =>
             {
                 var msg = Helpers.BytesFromMessage(message);
-                peer.SendTcp(msg);
+                peer.Send(msg);
             });
         }
 
-        public async Task HandleReceivedLatestBlock(Message message, PeerConnection peer)
+        public async Task HandleReceivedLatestBlock(Message message, ClientSocket peer)
         {
             var receivedBlock = message.Block;
             var latestBlock = this.blockchain.LatestBlock;
@@ -139,8 +141,10 @@ namespace blockchain.net
             }
         }
 
-        public async Task HandleMessage(PeerConnection peer, Message message)
+        public async Task HandleMessage(ClientSocket peer, Message message)
         {
+            Console.WriteLine($"message.Type => {message.Type} => {peer.Endpoint}");
+            
             switch (message.Type)
             {
                 case MessageType.REQUEST_LATEST_BLOCK:

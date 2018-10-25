@@ -39,12 +39,7 @@ namespace blockchain.net
         /// <returns>String of hex digits</returns>
         public static string StringFromBytes(byte[] bytes)
         {
-            var sb = new StringBuilder();
-            foreach (byte b in bytes)
-            {
-                sb.Append(b);
-            }
-            return sb.ToString();
+            return System.Text.Encoding.UTF8.GetString(bytes);
         }
     }
 }

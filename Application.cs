@@ -75,8 +75,11 @@ namespace blockchain.net
 
         private static void Connect()
         {
-            Console.WriteLine("Enter host to connect: ");
+            Console.WriteLine("Enter host to connect (127.0.0.1): ");
             string host = Console.ReadLine();
+            if(string.IsNullOrWhiteSpace(host)){
+                host = "127.0.0.1";
+            }
             Console.WriteLine("Enter port to connect: ");
             string input = Console.ReadLine();
             int port = 0;
@@ -104,7 +107,7 @@ namespace blockchain.net
 
         private static void Peers()
         {
-            p2p.Peers.ForEach((peer) => Console.WriteLine(peer.RemoteEndpoint.Address));
+            p2p.Peers.ForEach((peer) => Console.WriteLine(peer.Endpoint.Address));
         }
 
         private static void Open()

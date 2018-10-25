@@ -1,10 +1,9 @@
 
 using System;
-using Waher.Networking.Sniffers;
 
 namespace blockchain.net
 {
-    public class Sniffer : ISniffer
+    public class Sniffer //: ISniffer
     {
         public void Error(string error)
         {
